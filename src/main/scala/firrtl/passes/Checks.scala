@@ -415,6 +415,7 @@ object CheckTypes extends Pass {
           }
           sx.reset.tpe match {
             case UIntType(IntWidth(w)) if w == 1 =>
+            case AsyncResetType =>
             case UIntType(UnknownWidth) => // cannot catch here, though width may ultimately be wrong
             case _ => errors.append(new IllegalResetType(info, mname, sx.name))
           }
