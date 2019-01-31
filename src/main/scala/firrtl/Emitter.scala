@@ -297,6 +297,7 @@ class VerilogEmitter extends SeqTransform with Emitter {
        case AsUInt => Seq("$unsigned(", a0, ")")
        case AsSInt => Seq("$signed(", a0, ")")
        case AsClock => Seq(a0)
+       case AsAsyncReset => Seq(a0)
        case Dshlw => Seq(cast(a0), " << ", a1)
        case Dshl => Seq(cast(a0), " << ", a1)
        case Dshr => doprim.tpe match {

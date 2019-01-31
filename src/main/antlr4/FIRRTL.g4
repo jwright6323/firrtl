@@ -254,6 +254,7 @@ primop
   | 'neq('
   | 'pad('
   | 'asUInt('
+  | 'asAsyncReset('
   | 'asSInt('
   | 'asClock('
   | 'shl('
