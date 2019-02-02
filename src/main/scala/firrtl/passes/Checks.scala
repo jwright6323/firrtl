@@ -53,6 +53,8 @@ object CheckHighForm extends Pass {
     s"$info: [module $mname] Primop $op argument $value < 0.")
   class LsbLargerThanMsbException(info: Info, mname: String, op: String, lsb: Int, msb: Int) extends PassException(
     s"$info: [module $mname] Primop $op lsb $lsb > $msb.")
+  class NonLiteralAsyncResetValueException(info: Info, mname: String, reg: String, init: String) extends PassException(
+    s"$info: [module $mname] AsyncReset Reg '$reg' reset to non-literal '$init'")
 
   def run(c: Circuit): Circuit = {
     val errors = new Errors()
@@ -164,6 +166,13 @@ object CheckHighForm extends Pass {
       val info = get_info(s) match {case NoInfo => minfo case x => x}
       s foreach checkName(info, mname, names)
       s match {
+        case DefRegister(info, name, _,_, reset, init) if reset.tpe == AsyncResetType =>
+          init match {
+            case _: Literal => // okay
+            case nonlit =>
+              val e = new NonLiteralAsyncResetValueException(info, mname, name, nonlit.serialize)
+              errors.append(e)
+          }
         case sx: DefMemory =>
           if (hasFlip(sx.dataType))
             errors.append(new MemWithFlipException(info, mname, sx.name))
@@ -315,7 +324,7 @@ object CheckTypes extends Pass {
         }
       }
       e.op match {
-        case AsUInt | AsSInt | AsClock | AsFixedPoint =>
+        case AsUInt | AsSInt | AsClock | AsFixedPoint | AsAsyncReset =>
           // All types are ok
         case Dshl | Dshr =>
           checkAllTypes(Seq(e.args.head), okUInt=true, okSInt=true,  okClock=false, okFix=true, okAsync=false)

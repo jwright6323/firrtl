@@ -350,6 +350,8 @@ class ConstantPropagation extends Transform with ResolvedAnnotationPaths {
     // Keep track of any submodule inputs we drive with a constant
     // (can have more than 1 of the same submodule)
     val constSubInputs = mutable.HashMap.empty[String, mutable.HashMap[String, Seq[Literal]]]
+    // AsyncReset registers don't have reset turned into a mux so we must be careful
+    val asyncResetRegs = mutable.HashSet.empty[String]
 
     // Copy constant mapping for constant inputs (except ones marked dontTouch!)
     nodeMap ++= constInputs.filterNot { case (pname, _) => dontTouches.contains(pname) }
@@ -405,6 +407,9 @@ class ConstantPropagation extends Transform with ResolvedAnnotationPaths {
       // Record things that should be propagated
       stmtx match {
         case x: DefNode if !dontTouches.contains(x.name) => propagateRef(x.name, x.value)
+        case reg: DefRegister if reg.reset.tpe == AsyncResetType =>
+          asyncResetRegs += reg.name
+          reg
         case Connect(_, WRef(wname, wtpe, WireKind, _), expr: Literal) if !dontTouches.contains(wname) =>
           val exprx = constPropExpression(nodeMap, instMap, constSubOutputs)(pad(expr, wtpe))
           propagateRef(wname, exprx)
@@ -415,18 +420,19 @@ class ConstantPropagation extends Transform with ResolvedAnnotationPaths {
         // Const prop registers that are fed only a constant or a mux between and constant and the
         // register itself
         // This requires that reset has been made explicit
-        case Connect(_, lref @ WRef(lname, ltpe, RegKind, _), expr) if !dontTouches.contains(lname) => expr match {
-          case lit: Literal =>
-            nodeMap(lname) = constPropExpression(nodeMap, instMap, constSubOutputs)(pad(lit, ltpe))
-          case Mux(_, tval: WRef, fval: Literal, _) if weq(lref, tval) =>
-            nodeMap(lname) = constPropExpression(nodeMap, instMap, constSubOutputs)(pad(fval, ltpe))
-          case Mux(_, tval: Literal, fval: WRef, _) if weq(lref, fval) =>
-            nodeMap(lname) = constPropExpression(nodeMap, instMap, constSubOutputs)(pad(tval, ltpe))
-          case WRef(`lname`, _,_,_) => // If a register is connected to itself, propagate zero
-            val zero = passes.RemoveValidIf.getGroundZero(ltpe)
-            nodeMap(lname) = constPropExpression(nodeMap, instMap, constSubOutputs)(pad(zero, ltpe))
-          case _ =>
-        }
+        case Connect(_, lref @ WRef(lname, ltpe, RegKind, _), expr)
+          if !dontTouches.contains(lname) && !asyncResetRegs.contains(lname) => expr match {
+            case lit: Literal =>
+              nodeMap(lname) = constPropExpression(nodeMap, instMap, constSubOutputs)(pad(lit, ltpe))
+            case Mux(_, tval: WRef, fval: Literal, _) if weq(lref, tval) =>
+              nodeMap(lname) = constPropExpression(nodeMap, instMap, constSubOutputs)(pad(fval, ltpe))
+            case Mux(_, tval: Literal, fval: WRef, _) if weq(lref, fval) =>
+              nodeMap(lname) = constPropExpression(nodeMap, instMap, constSubOutputs)(pad(tval, ltpe))
+            case WRef(`lname`, _,_,_) => // If a register is connected to itself, propagate zero
+              val zero = passes.RemoveValidIf.getGroundZero(ltpe)
+              nodeMap(lname) = constPropExpression(nodeMap, instMap, constSubOutputs)(pad(zero, ltpe))
+            case _ =>
+          }
         // Mark instance inputs connected to a constant
         case Connect(_, lref @ WSubField(WRef(inst, _, InstanceKind, _), port, ptpe, _), lit: Literal) =>
           val paddedLit = constPropExpression(nodeMap, instMap, constSubOutputs)(pad(lit, ptpe)).asInstanceOf[Literal]

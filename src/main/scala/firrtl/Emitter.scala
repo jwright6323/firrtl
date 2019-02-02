@@ -451,6 +451,7 @@ class VerilogEmitter extends SeqTransform with Emitter {
         else expr match {
           case m: Mux =>
             if (m.tpe == ClockType) throw EmitterException("Cannot emit clock muxes directly")
+            if (m.tpe == AsyncResetType) throw EmitterException("Cannot emit async reset muxes directly")
 
             def ifStatement = Seq(tabs, "if (", m.cond, ") begin")
 
